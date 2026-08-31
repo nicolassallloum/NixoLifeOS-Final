@@ -1,0 +1,25 @@
+Requirement_ID,Module,Feature_Description,Test_Case_ID,Coverage_Status,Target_Phase,Defect_ID
+REQ-AUTH-001,Auth,User Auth Modal & Session State,AUTH-001,COVERED,Phase 3,NONE
+REQ-NAV-001,Navigation,Sidebar View Routing (21 Routes),NAV-001,COVERED,Phase 4,NONE
+REQ-NAV-002,Navigation,Command Palette Cmd+K Shortcut,NAV-002,COVERED,Phase 4,NONE
+REQ-DASH-001,Dashboard,Command Center Summary & Quick Actions,DASH-001,COVERED,Phase 4,NONE
+REQ-TASK-001,Tasks,Task Creation & Kanban/Matrix Sync,TASK-001,COVERED,Phase 4,NONE
+REQ-PROJ-001,Projects,Project Portfolio & Health Badges,PROJ-001,COVERED,Phase 4,NONE
+REQ-GOAL-001,Goals,SMART Goals & Progress Trackers,GOAL-001,COVERED,Phase 4,NONE
+REQ-HABIT-001,Habits,Habit Check-in Logger & Streaks,HABIT-001,COVERED,Phase 4,NONE
+REQ-CAL-001,Calendar,Schedule Grid & Event Creator,CAL-001,COVERED,Phase 4,NONE
+REQ-FOCUS-001,Focus,Pomodoro Timer & Preset Controls,FOCUS-001,COVERED,Phase 4,NONE
+REQ-FIN-001,Finance,Account Balances & Expense Logging,FIN-001,COVERED,Phase 4,NONE
+REQ-HEALTH-001,Health,Medication Status Logger & Refill Tracker,HEALTH-001,COVERED,Phase 4,NONE
+REQ-EDU-001,Education,Course Learning Pipeline,EDU-001,COVERED,Phase 4,NONE
+REQ-CAREER-001,Career,Job Application Status Pipeline,CAREER-001,COVERED,Phase 4,NONE
+REQ-NOTES-001,Notes,Markdown Notes Repository,NOTES-001,COVERED,Phase 4,NONE
+REQ-DOC-001,Documents,Document Vault Metadata Storage,DOC-001,COVERED,Phase 4,NONE
+REQ-POINTS-001,Gamification,XP Progression & Badge Badges,POINTS-001,COVERED,Phase 4,NONE
+REQ-REPORT-001,Analytics,Recharts & AI Executive Summary,REPORT-001,COVERED,Phase 4,NONE
+REQ-NOTIF-001,Notifications,In-App Notifications Feed,NOTIF-001,COVERED,Phase 4,NONE
+REQ-AUTO-001,Automations,Rules Engine Triggers & Actions,AUTO-001,COVERED,Phase 4,NONE
+REQ-AI-001,Copilot,Natural Language Action Proposals,AI-001,COVERED,Phase 8,NONE
+REQ-SEC-001,Security,Server-Side Gemini API Key Isolation,SEC-001,COVERED,Phase 5,NONE
+REQ-A11Y-001,Accessibility,WCAG 2.2 Level AA Keyboard Navigation,A11Y-001,COVERED,Phase 7,NONE
+REQ-PERF-001,Performance,Core Web Vitals LCP/INP Targets,PERF-001,COVERED,Phase 7,NONE

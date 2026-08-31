@@ -1,0 +1,6 @@
+{
+  "name": "Nix Life OS",
+  "description": "Plan your life. Track your progress. Achieve more. A unified personal command center and life operating system.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
