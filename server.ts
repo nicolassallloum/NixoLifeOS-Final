@@ -870,7 +870,181 @@ app.get("/api/db/pull", async (req, res) => {
 
 // Vite Middleware for Dev Mode & Static Fallback for Production
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  
+// =========================================================================
+// V2 FULL-FIDELITY CLOUD SNAPSHOT SYNC
+// =========================================================================
+
+// Store every Nix Life OS local-storage collection exactly as JSONB.
+app.post("/api/db/sync-v2", async (req, res) => {
+  const pool = getPgPool();
+
+  if (!pool) {
+    return res.status(503).json({
+      success: false,
+      message: "PostgreSQL database is not connected.",
+      collectionsStored: 0,
+      recordsStored: 0,
+    });
+  }
+
+  const { userId, collections } = req.body ?? {};
+
+  if (!userId || typeof userId !== "string") {
+    return res.status(400).json({
+      success: false,
+      message: "A valid userId is required.",
+      collectionsStored: 0,
+      recordsStored: 0,
+    });
+  }
+
+  if (
+    !collections ||
+    typeof collections !== "object" ||
+    Array.isArray(collections)
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "collections must be an object.",
+      collectionsStored: 0,
+      recordsStored: 0,
+    });
+  }
+
+  const entries = Object.entries(
+    collections as Record<string, unknown>
+  );
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    let recordsStored = 0;
+
+    for (const [collectionKey, payload] of entries) {
+      if (!/^nix_[a-z0-9_]+$/i.test(collectionKey)) {
+        throw new Error(
+          `Invalid collection key: ${collectionKey}`
+        );
+      }
+
+      await client.query(
+        `
+        INSERT INTO public.nix_cloud_snapshots (
+          user_id,
+          collection_key,
+          payload,
+          updated_at
+        )
+        VALUES ($1, $2, $3::jsonb, NOW())
+        ON CONFLICT (user_id, collection_key)
+        DO UPDATE SET
+          payload = EXCLUDED.payload,
+          updated_at = NOW()
+        `,
+        [
+          userId,
+          collectionKey,
+          JSON.stringify(payload ?? null),
+        ]
+      );
+
+      if (Array.isArray(payload)) {
+        recordsStored += payload.length;
+      } else if (payload !== null && payload !== undefined) {
+        recordsStored += 1;
+      }
+    }
+
+    await client.query("COMMIT");
+
+    return res.json({
+      success: true,
+      message:
+        `Stored ${entries.length} Nix Life OS collections in PostgreSQL.`,
+      userId,
+      collectionsStored: entries.length,
+      recordsStored,
+    });
+  } catch (err: any) {
+    await client.query("ROLLBACK");
+
+    return res.status(500).json({
+      success: false,
+      message: `Cloud snapshot sync failed: ${err.message}`,
+      collectionsStored: 0,
+      recordsStored: 0,
+    });
+  } finally {
+    client.release();
+  }
+});
+
+
+// Restore every collection for a user.
+app.get("/api/db/pull-v2", async (req, res) => {
+  const pool = getPgPool();
+
+  if (!pool) {
+    return res.status(503).json({
+      success: false,
+      message: "PostgreSQL database is not connected.",
+      data: null,
+    });
+  }
+
+  const userId =
+    typeof req.query.userId === "string"
+      ? req.query.userId
+      : "";
+
+  if (!userId) {
+    return res.status(400).json({
+      success: false,
+      message: "userId query parameter is required.",
+      data: null,
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        collection_key,
+        payload,
+        updated_at
+      FROM public.nix_cloud_snapshots
+      WHERE user_id = $1
+      ORDER BY collection_key
+      `,
+      [userId]
+    );
+
+    const data: Record<string, unknown> = {};
+
+    for (const row of result.rows) {
+      data[row.collection_key] = row.payload;
+    }
+
+    return res.json({
+      success: true,
+      userId,
+      collectionsLoaded: result.rows.length,
+      data,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      message: `Cloud snapshot pull failed: ${err.message}`,
+      data: null,
+    });
+  }
+});
+
+
+if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

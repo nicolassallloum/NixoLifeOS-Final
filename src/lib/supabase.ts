@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { nixStorage } from "./storage";
+import { nixStorage, STORAGE_KEYS } from "./storage";
 
 export const SUPABASE_CONFIG = {
   projectRef: "aewqatcsrmhznhgdhboa",
@@ -193,17 +193,10 @@ ALTER TABLE nix_focus_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE nix_goals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE nix_notes ENABLE ROW LEVEL SECURITY;
 
--- Allow anonymous access for applet synchronization (or authenticated users)
-CREATE POLICY "Allow public read-write for nix_tasks" ON nix_tasks FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for nix_projects" ON nix_projects FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for nix_accounts" ON nix_accounts FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for nix_transactions" ON nix_transactions FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for nix_habits" ON nix_habits FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for nix_medications" ON nix_medications FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for nix_health_measurements" ON nix_health_measurements FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for nix_focus_sessions" ON nix_focus_sessions FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for nix_goals" ON nix_goals FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for nix_notes" ON nix_notes FOR ALL USING (true) WITH CHECK (true);
+-- SECURITY
+-- RLS is enabled.
+-- No anonymous public read/write policies are created.
+-- Cloud synchronization is performed through the Express backend.
 `;
 
 export const supabaseDbService = {
@@ -245,75 +238,136 @@ export const supabaseDbService = {
     }
   },
 
-  // Push local storage data to Supabase
-  async pushAllToCloud(): Promise<{ success: boolean; message: string; syncedCount: number }> {
+  // V2: Push every Nix Life OS local-storage collection
+  async pushAllToCloud(): Promise<{
+    success: boolean;
+    message: string;
+    syncedCount: number;
+  }> {
     try {
-      const payload = {
-        tasks: nixStorage.getTasks(),
-        projects: nixStorage.getProjects(),
-        accounts: nixStorage.getAccounts(),
-        transactions: nixStorage.getTransactions(),
-        habits: nixStorage.getHabits(),
-        medications: nixStorage.getMedications(),
-        healthMeasurements: nixStorage.getHealthMeasurements(),
-        focusSessions: nixStorage.getFocusSessions(),
-        goals: nixStorage.getGoals(),
-        notes: nixStorage.getNotes(),
-      };
+      const currentUser = nixStorage.getCurrentUser();
+      const userId = currentUser?.id || "demo-user-1";
 
-      const res = await fetch("/api/db/sync", {
+      const collections: Record<string, unknown> = {};
+
+      for (const key of Object.values(STORAGE_KEYS)) {
+        const raw = localStorage.getItem(key);
+
+        if (raw === null) {
+          continue;
+        }
+
+        try {
+          collections[key] = JSON.parse(raw);
+        } catch {
+          collections[key] = raw;
+        }
+      }
+
+      const res = await fetch("/api/db/sync-v2", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId,
+          collections,
+        }),
       });
 
-      return await res.json();
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        return {
+          success: false,
+          message:
+            data.message ||
+            "Failed to synchronize Nix Life OS cloud snapshot.",
+          syncedCount: 0,
+        };
+      }
+
+      return {
+        success: true,
+        message: data.message,
+        syncedCount: data.recordsStored || 0,
+      };
     } catch (err: any) {
       return {
         success: false,
-        message: err.message || "Failed to push data to Supabase.",
+        message:
+          err.message ||
+          "Failed to push Nix Life OS data to PostgreSQL.",
         syncedCount: 0,
       };
     }
   },
 
-  // Pull cloud data into local storage
-  async pullAllFromCloud(): Promise<{ success: boolean; message: string; recordsLoaded: number }> {
+  // V2: Restore every cloud collection back into local storage
+  async pullAllFromCloud(): Promise<{
+    success: boolean;
+    message: string;
+    recordsLoaded: number;
+  }> {
     try {
-      const res = await fetch("/api/db/pull");
+      const currentUser = nixStorage.getCurrentUser();
+      const userId = currentUser?.id || "demo-user-1";
+
+      const res = await fetch(
+        `/api/db/pull-v2?userId=${encodeURIComponent(userId)}`
+      );
+
       const data = await res.json();
-      if (data.success && data.data) {
-        let count = 0;
-        // Optionally merge or restore data
-        if (data.data.tasks && Array.isArray(data.data.tasks)) {
-          data.data.tasks.forEach((t: any) => nixStorage.saveTask(t));
-          count += data.data.tasks.length;
-        }
-        if (data.data.projects && Array.isArray(data.data.projects)) {
-          data.data.projects.forEach((p: any) => nixStorage.saveProject(p));
-          count += data.data.projects.length;
-        }
-        if (data.data.transactions && Array.isArray(data.data.transactions)) {
-          data.data.transactions.forEach((tx: any) => nixStorage.saveTransaction(tx));
-          count += data.data.transactions.length;
-        }
+
+      if (!res.ok || !data.success || !data.data) {
         return {
-          success: true,
-          message: `Successfully pulled ${count} records from Supabase PostgreSQL.`,
-          recordsLoaded: count,
+          success: false,
+          message:
+            data.message ||
+            "No cloud snapshot was returned.",
+          recordsLoaded: 0,
         };
       }
+
+      const allowedKeys = new Set(
+        Object.values(STORAGE_KEYS)
+      );
+
+      let recordsLoaded = 0;
+
+      for (const [key, value] of Object.entries(data.data)) {
+        if (!allowedKeys.has(key)) {
+          continue;
+        }
+
+        localStorage.setItem(
+          key,
+          JSON.stringify(value)
+        );
+
+        if (Array.isArray(value)) {
+          recordsLoaded += value.length;
+        } else if (value !== null && value !== undefined) {
+          recordsLoaded += 1;
+        }
+      }
+
       return {
-        success: false,
-        message: data.message || "No data received from cloud.",
-        recordsLoaded: 0,
+        success: true,
+        message:
+          `Restored ${data.collectionsLoaded || 0} cloud collections. ` +
+          `Refresh the application to reload restored data.`,
+        recordsLoaded,
       };
     } catch (err: any) {
       return {
         success: false,
-        message: err.message || "Failed to pull data from Supabase.",
+        message:
+          err.message ||
+          "Failed to restore Nix Life OS cloud data.",
         recordsLoaded: 0,
       };
     }
   },
+
 };
