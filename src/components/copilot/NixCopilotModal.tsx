@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { nixStorage } from "../../lib/storage";
 import { CopilotProposal, executeCopilotProposal, CopilotExecutionResult } from "../../lib/copilotExecutor";
+import { authenticatedFetch } from "../../lib/api";
 
 interface NixCopilotModalProps {
   isOpen: boolean;
@@ -125,7 +126,7 @@ export const NixCopilotModal: React.FC<NixCopilotModalProps> = ({
     setExecutionResult(null);
 
     try {
-      const response = await fetch("/api/ai/copilot", {
+      const response = await authenticatedFetch("/api/ai/copilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

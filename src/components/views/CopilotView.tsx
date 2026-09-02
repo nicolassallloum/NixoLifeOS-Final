@@ -21,6 +21,7 @@ import {
 import { nixStorage } from "../../lib/storage";
 import { NixCard } from "../ui/NixUi";
 import { CopilotProposal, executeCopilotProposal, CopilotExecutionResult } from "../../lib/copilotExecutor";
+import { authenticatedFetch } from "../../lib/api";
 
 export const CopilotView: React.FC = () => {
   const [prompt, setPrompt] = useState("");
@@ -38,7 +39,7 @@ export const CopilotView: React.FC = () => {
     setExecutionResult(null);
 
     try {
-      const response = await fetch("/api/ai/copilot", {
+      const response = await authenticatedFetch("/api/ai/copilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

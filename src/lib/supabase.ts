@@ -203,7 +203,29 @@ export const supabaseDbService = {
   // Test connection to Supabase / Postgres via server API
   async checkConnection(): Promise<DatabaseStatus> {
     try {
-      const res = await fetch("/api/db/status");
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        return {
+          connected: false,
+          mode: "offline_local",
+          projectRef: SUPABASE_CONFIG.projectRef,
+          url: SUPABASE_CONFIG.url,
+          tablesCount: 0,
+          tables: [],
+          message:
+            "Sign in to check the cloud database connection.",
+        };
+      }
+
+      const res = await fetch("/api/db/status", {
+        headers: {
+          Authorization:
+            `Bearer ${session.access_token}`,
+        },
+      });
       if (!res.ok) {
         throw new Error(`HTTP Error ${res.status}`);
       }

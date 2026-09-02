@@ -71,7 +71,9 @@ export const NixAppShell: React.FC<NixAppShellProps> = ({ currentRoute, onRouteC
   // User Auth State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authModalMode, setAuthModalMode] = useState<"login" | "register">("register");
+  const [authModalMode, setAuthModalMode] = useState<
+    "login" | "register" | "reset"
+  >("register");
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
 
@@ -90,8 +92,13 @@ export const NixAppShell: React.FC<NixAppShellProps> = ({ currentRoute, onRouteC
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
         if (!mounted) return;
+
+        if (event === "PASSWORD_RECOVERY") {
+          setAuthModalMode("reset");
+          setIsAuthModalOpen(true);
+        }
 
         if (session?.user) {
           const mapped =
