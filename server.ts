@@ -972,8 +972,19 @@ function enforceSnapshotOwnership(
       value as Record<string, unknown>
     )) {
       if (key === "userId") {
-        // Never trust ownership supplied by the browser.
-        result[key] = authenticatedUserId;
+        // Foreign ownership must never be silently
+        // converted into the authenticated user's data.
+        if (
+          typeof child === "string" &&
+          child !== authenticatedUserId
+        ) {
+          throw new Error(
+            "SNAPSHOT_OWNERSHIP_MISMATCH"
+          );
+        }
+
+        result[key] =
+          authenticatedUserId;
       } else {
         result[key] =
           enforceSnapshotOwnership(
