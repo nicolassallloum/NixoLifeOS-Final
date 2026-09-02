@@ -11,6 +11,9 @@ dotenv.config();
 const { Pool } = pg;
 
 const app = express();
+
+// Reduce unnecessary framework fingerprinting.
+app.disable("x-powered-by");
 const PORT = 3000;
 
 // Supabase Project defaults
