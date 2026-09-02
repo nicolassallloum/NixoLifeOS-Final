@@ -14,8 +14,23 @@ export const HealthView: React.FC = () => {
   const [primaryVal, setPrimaryVal] = useState<number>(70);
   const [secondaryVal, setSecondaryVal] = useState<number | undefined>(undefined);
   const [unit, setUnit] = useState("kg");
-  const [measDate, setMeasDate] = useState(new Date().toISOString().split("T")[0]);
-  const [measTime, setMeasTime] = useState("08:00");
+  const getCurrentLocalDate = () => {
+    const now = new Date();
+    const local = new Date(
+      now.getTime() - now.getTimezoneOffset() * 60000
+    );
+    return local.toISOString().slice(0, 10);
+  };
+
+  const getCurrentLocalTime = () =>
+    new Date().toTimeString().slice(0, 5);
+
+  const [measDate, setMeasDate] = useState(
+    getCurrentLocalDate()
+  );
+  const [measTime, setMeasTime] = useState(
+    getCurrentLocalTime()
+  );
 
   // Medication Modal
   const [isMedModalOpen, setIsMedModalOpen] = useState(false);
@@ -38,6 +53,16 @@ export const HealthView: React.FC = () => {
   const handleSaveMeasurement = () => {
     if (primaryVal === undefined || primaryVal < 0) {
       setFormError("Valid primary value is required.");
+      return;
+    }
+
+    if (!measDate) {
+      setFormError("Measurement date is required.");
+      return;
+    }
+
+    if (!measTime) {
+      setFormError("Measurement time is required.");
       return;
     }
 
@@ -152,6 +177,8 @@ export const HealthView: React.FC = () => {
           <button
             onClick={() => {
               setFormError("");
+              setMeasDate(getCurrentLocalDate());
+              setMeasTime(getCurrentLocalTime());
               setIsMeasModalOpen(true);
             }}
             className="px-4 py-2 bg-rose-500 hover:bg-rose-400 text-slate-950 rounded-xl text-xs font-mono font-extrabold shadow-sm transition-all flex items-center gap-1.5"
@@ -317,6 +344,39 @@ export const HealthView: React.FC = () => {
                 />
               </div>
             )}
+          </div>
+
+          {/* Measurement Date & Time */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-mono font-bold text-slate-300 mb-1">
+                Measurement Date *
+              </label>
+              <input
+                type="date"
+                value={measDate}
+                onChange={(e) => {
+                  setMeasDate(e.target.value);
+                  setFormError("");
+                }}
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-slate-100 focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-mono font-bold text-slate-300 mb-1">
+                Measurement Time *
+              </label>
+              <input
+                type="time"
+                value={measTime}
+                onChange={(e) => {
+                  setMeasTime(e.target.value);
+                  setFormError("");
+                }}
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-slate-100 focus:outline-none focus:border-rose-500"
+              />
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
