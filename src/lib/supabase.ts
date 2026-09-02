@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { nixStorage, STORAGE_KEYS } from "./storage";
+import { STORAGE_KEYS } from "./storage";
 
 export const SUPABASE_CONFIG = {
   projectRef: "aewqatcsrmhznhgdhboa",
@@ -245,8 +245,18 @@ export const supabaseDbService = {
     syncedCount: number;
   }> {
     try {
-      const currentUser = nixStorage.getCurrentUser();
-      const userId = currentUser?.id || "demo-user-1";
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        return {
+          success: false,
+          message:
+            "You must be signed in before synchronizing cloud data.",
+          syncedCount: 0,
+        };
+      }
 
       const collections: Record<string, unknown> = {};
 
@@ -268,9 +278,10 @@ export const supabaseDbService = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization:
+            `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-          userId,
           collections,
         }),
       });
@@ -310,11 +321,27 @@ export const supabaseDbService = {
     recordsLoaded: number;
   }> {
     try {
-      const currentUser = nixStorage.getCurrentUser();
-      const userId = currentUser?.id || "demo-user-1";
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        return {
+          success: false,
+          message:
+            "You must be signed in before restoring cloud data.",
+          recordsLoaded: 0,
+        };
+      }
 
       const res = await fetch(
-        `/api/db/pull-v2?userId=${encodeURIComponent(userId)}`
+        "/api/db/pull-v2",
+        {
+          headers: {
+            Authorization:
+              `Bearer ${session.access_token}`,
+          },
+        }
       );
 
       const data = await res.json();

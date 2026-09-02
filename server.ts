@@ -29,6 +29,58 @@ function getSupabase() {
   return supabaseClient;
 }
 
+
+// Verify Supabase access tokens before accessing
+// user-specific server resources.
+async function requireAuth(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  const authorization =
+    req.headers.authorization || "";
+
+  if (!authorization.startsWith("Bearer ")) {
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required.",
+    });
+  }
+
+  const token =
+    authorization.slice("Bearer ".length).trim();
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required.",
+    });
+  }
+
+  try {
+    const {
+      data: { user },
+      error,
+    } = await getSupabase().auth.getUser(token);
+
+    if (error || !user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired authentication session.",
+      });
+    }
+
+    (req as any).authUser = user;
+
+    next();
+  } catch {
+    return res.status(401).json({
+      success: false,
+      message: "Authentication verification failed.",
+    });
+  }
+}
+
 // Lazy PostgreSQL Connection Pool
 let pgPool: pg.Pool | null = null;
 function getPgPool(): pg.Pool | null {
@@ -875,8 +927,49 @@ async function startServer() {
 // V2 FULL-FIDELITY CLOUD SNAPSHOT SYNC
 // =========================================================================
 
+
+function enforceSnapshotOwnership(
+  value: unknown,
+  authenticatedUserId: string
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) =>
+      enforceSnapshotOwnership(
+        item,
+        authenticatedUserId
+      )
+    );
+  }
+
+  if (
+    value !== null &&
+    typeof value === "object"
+  ) {
+    const result: Record<string, unknown> = {};
+
+    for (const [key, child] of Object.entries(
+      value as Record<string, unknown>
+    )) {
+      if (key === "userId") {
+        // Never trust ownership supplied by the browser.
+        result[key] = authenticatedUserId;
+      } else {
+        result[key] =
+          enforceSnapshotOwnership(
+            child,
+            authenticatedUserId
+          );
+      }
+    }
+
+    return result;
+  }
+
+  return value;
+}
+
 // Store every Nix Life OS local-storage collection exactly as JSONB.
-app.post("/api/db/sync-v2", async (req, res) => {
+app.post("/api/db/sync-v2", requireAuth, async (req, res) => {
   const pool = getPgPool();
 
   if (!pool) {
@@ -888,7 +981,8 @@ app.post("/api/db/sync-v2", async (req, res) => {
     });
   }
 
-  const { userId, collections } = req.body ?? {};
+  const { collections } = req.body ?? {};
+  const userId = (req as any).authUser?.id;
 
   if (!userId || typeof userId !== "string") {
     return res.status(400).json({
@@ -947,7 +1041,12 @@ app.post("/api/db/sync-v2", async (req, res) => {
         [
           userId,
           collectionKey,
-          JSON.stringify(payload ?? null),
+          JSON.stringify(
+            enforceSnapshotOwnership(
+              payload ?? null,
+              userId
+            )
+          ),
         ]
       );
 
@@ -984,7 +1083,7 @@ app.post("/api/db/sync-v2", async (req, res) => {
 
 
 // Restore every collection for a user.
-app.get("/api/db/pull-v2", async (req, res) => {
+app.get("/api/db/pull-v2", requireAuth, async (req, res) => {
   const pool = getPgPool();
 
   if (!pool) {
@@ -996,9 +1095,7 @@ app.get("/api/db/pull-v2", async (req, res) => {
   }
 
   const userId =
-    typeof req.query.userId === "string"
-      ? req.query.userId
-      : "";
+    (req as any).authUser?.id || "";
 
   if (!userId) {
     return res.status(400).json({

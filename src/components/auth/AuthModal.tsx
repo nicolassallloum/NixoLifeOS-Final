@@ -20,7 +20,11 @@ import {
   ChevronRight,
   Camera,
 } from "lucide-react";
-import { nixStorage } from "../../lib/storage";
+import {
+  registerWithSupabase,
+  loginWithSupabase,
+  sendPasswordReset,
+} from "../../lib/auth";
 import { User, UserRegistrationInput } from "../../types";
 
 interface AuthModalProps {
@@ -131,70 +135,128 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMsg(null);
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const result = nixStorage.registerUser(regData);
+    const result = await registerWithSupabase(regData);
+
     if (!result.success) {
-      setErrorMsg(result.error || "Registration failed. Please check required fields.");
+      setErrorMsg(
+        result.error ||
+        "Registration failed."
+      );
       return;
     }
 
-    setSuccessMsg("Account successfully created! Welcome to Nix Life OS.");
+    if (result.needsEmailConfirmation) {
+      setSuccessMsg(
+        "Account created. Please check your email and confirm your account before signing in."
+      );
+
+      setMode("login");
+      setLoginEmail(regData.email);
+      return;
+    }
+
+    setSuccessMsg(
+      "Secure account created successfully."
+    );
+
     setTimeout(() => {
-      if (result.user) onSuccess(result.user);
+      if (result.user) {
+        onSuccess(result.user);
+      }
+
       onClose();
-    }, 1200);
+    }, 800);
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
 
     if (!loginEmail || !loginPassword) {
-      setErrorMsg("Please enter both email address and password.");
+      setErrorMsg(
+        "Please enter both email address and password."
+      );
       return;
     }
 
-    const result = nixStorage.loginUser(loginEmail, loginPassword);
+    const result =
+      await loginWithSupabase(
+        loginEmail,
+        loginPassword
+      );
+
     if (!result.success) {
-      setErrorMsg(result.error || "Login failed. Invalid credentials.");
+      setErrorMsg(
+        result.error ||
+        "Authentication failed."
+      );
       return;
     }
 
-    setSuccessMsg("Authentication successful. Loading your personal command center...");
+    setSuccessMsg(
+      "Authentication successful. Loading your personal command center..."
+    );
+
     setTimeout(() => {
-      if (result.user) onSuccess(result.user);
+      if (result.user) {
+        onSuccess(result.user);
+      }
+
       onClose();
-    }, 1000);
+    }, 600);
   };
+
 
   const handleDemoLogin = () => {
-    const result = nixStorage.loginUser("alex.vance@nixos.io", "demo123");
-    if (result.user) {
-      setSuccessMsg("Logged in as Demo Commander Alex Vance.");
-      setTimeout(() => {
-        if (result.user) onSuccess(result.user);
-        onClose();
-      }, 800);
-    }
+    setSuccessMsg(null);
+    setErrorMsg(
+      "Quick Demo Login is disabled in secure authentication mode."
+    );
   };
 
-  const handleForgotPassword = (e: React.FormEvent) => {
+
+  const handleForgotPassword = async (
+    e: React.FormEvent
+  ) => {
     e.preventDefault();
+
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!forgotEmail || !emailRegex.test(forgotEmail.trim())) {
-      setErrorMsg("Please enter a valid email address.");
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (
+      !forgotEmail ||
+      !emailRegex.test(forgotEmail.trim())
+    ) {
+      setErrorMsg(
+        "Please enter a valid email address."
+      );
       return;
     }
 
-    setSuccessMsg(`Password reset instructions have been dispatched to ${forgotEmail.trim()}. Please check your inbox.`);
+    const result =
+      await sendPasswordReset(forgotEmail);
+
+    if (!result.success) {
+      setErrorMsg(
+        result.error ||
+        "Could not send password reset email."
+      );
+      return;
+    }
+
+    setSuccessMsg(
+      `Password reset instructions were sent to ${forgotEmail.trim()}.`
+    );
   };
 
   return (
