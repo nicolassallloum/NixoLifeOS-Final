@@ -78,6 +78,80 @@ export const STORAGE_KEYS = {
   SETTINGS: "nix_user_settings",
 };
 
+export const ACTIVE_WORKSPACE_USER_KEY =
+  "nix_active_workspace_user_id";
+
+const IDENTITY_STORAGE_KEYS = new Set<string>([
+  STORAGE_KEYS.USERS,
+  STORAGE_KEYS.CURRENT_USER,
+]);
+
+export function getUserScopedStorageKey(
+  key: string,
+  userId: string
+): string {
+  if (IDENTITY_STORAGE_KEYS.has(key)) {
+    return key;
+  }
+
+  return `${key}::${userId}`;
+}
+
+function resolveStorageKey(
+  key: string
+): string {
+  if (IDENTITY_STORAGE_KEYS.has(key)) {
+    return key;
+  }
+
+  if (typeof window === "undefined") {
+    return key;
+  }
+
+  const userId =
+    localStorage.getItem(
+      ACTIVE_WORKSPACE_USER_KEY
+    );
+
+  if (!userId) {
+    return `${key}::guest`;
+  }
+
+  return getUserScopedStorageKey(
+    key,
+    userId
+  );
+}
+
+export function activateUserWorkspace(
+  userId: string
+): void {
+  if (
+    typeof window === "undefined" ||
+    !userId
+  ) {
+    return;
+  }
+
+  localStorage.setItem(
+    ACTIVE_WORKSPACE_USER_KEY,
+    userId
+  );
+}
+
+export function deactivateUserWorkspace():
+void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  localStorage.removeItem(
+    ACTIVE_WORKSPACE_USER_KEY
+  );
+}
+
+
+
 export const POINT_LEVELS: PointLevel[] = [
   { level: 1, name: "Starter", minPoints: 0 },
   { level: 2, name: "Explorer", minPoints: 500 },
@@ -170,9 +244,16 @@ const DEFAULT_POINTS_PROFILE: UserPointProfile = {
 function getItem<T>(key: string, defaultValue: T): T {
   try {
     if (typeof window === "undefined") return defaultValue;
-    const data = localStorage.getItem(key);
+    const storageKey =
+      resolveStorageKey(key);
+
+    const data =
+      localStorage.getItem(storageKey);
     if (!data) {
-      localStorage.setItem(key, JSON.stringify(defaultValue));
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify(defaultValue)
+      );
       return defaultValue;
     }
     const parsed = JSON.parse(data);
@@ -190,7 +271,10 @@ function getItem<T>(key: string, defaultValue: T): T {
 function setItem<T>(key: string, value: T): void {
   try {
     if (typeof window === "undefined") return;
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(
+      resolveStorageKey(key),
+      JSON.stringify(value)
+    );
   } catch (err) {
     console.error(`Error setting storage key ${key}:`, err);
   }
@@ -1677,24 +1761,29 @@ export const nixStorage = {
   getCurrentUser: (): User | null => getItem<User | null>(STORAGE_KEYS.CURRENT_USER, null),
 
   saveAuthenticatedUser: (user: User): void => {
-    // Never persist legacy password fields in browser storage.
-    const { passwordHash: _passwordHash, ...safeUser } = user as any;
+    // Never persist password material in browser storage.
+    const {
+      passwordHash: _passwordHash,
+      password: _password,
+      ...safeUser
+    } = user as any;
 
-    const users = nixStorage
-      .getUsers()
-      .filter(
-        (u) =>
-          u.id !== safeUser.id &&
-          u.id !== "demo-user-1"
-      );
-
-    users.unshift(safeUser as User);
-
-    setItem(STORAGE_KEYS.USERS, users);
-    setItem(STORAGE_KEYS.CURRENT_USER, safeUser as User);
-
-    migrateLegacyOwnershipInLocalStorage(
+    // Select this user's isolated local workspace BEFORE
+    // any domain collection is read or written.
+    activateUserWorkspace(
       safeUser.id
+    );
+
+    // The local identity list must contain only the
+    // currently authenticated account.
+    setItem(
+      STORAGE_KEYS.USERS,
+      [safeUser as User]
+    );
+
+    setItem(
+      STORAGE_KEYS.CURRENT_USER,
+      safeUser as User
     );
   },
 
@@ -1740,7 +1829,17 @@ export const nixStorage = {
   },
 
   logoutUser: (): void => {
-    setItem(STORAGE_KEYS.CURRENT_USER, null);
+    setItem(
+      STORAGE_KEYS.CURRENT_USER,
+      null
+    );
+
+    setItem(
+      STORAGE_KEYS.USERS,
+      []
+    );
+
+    deactivateUserWorkspace();
   },
 
   updateUserProfile: (userId: string, updates: Partial<User>): User | null => {

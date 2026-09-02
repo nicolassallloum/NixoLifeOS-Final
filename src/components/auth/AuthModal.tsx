@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   User as UserIcon,
   Mail,
@@ -24,6 +24,8 @@ import {
   registerWithSupabase,
   loginWithSupabase,
   sendPasswordReset,
+  updatePasswordWithSupabase,
+  logoutFromSupabase,
 } from "../../lib/auth";
 import { User, UserRegistrationInput } from "../../types";
 
@@ -31,7 +33,7 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (user: User) => void;
-  initialMode?: "login" | "register";
+  initialMode?: "login" | "register" | "reset";
 }
 
 const COUNTRIES = [
@@ -90,7 +92,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onSuccess,
   initialMode = "register",
 }) => {
-  const [mode, setMode] = useState<"login" | "register" | "forgot">(initialMode);
+  const [mode, setMode] = useState<
+    "login" | "register" | "forgot" | "reset"
+  >(initialMode);
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -102,6 +106,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   // Forgot Password State
   const [forgotEmail, setForgotEmail] = useState("");
+
+  // Password Recovery State
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+
+  useEffect(() => {
+    if (isOpen) {
+      setMode(initialMode);
+      setErrorMsg(null);
+
+      if (initialMode === "reset") {
+        setSuccessMsg(
+          "Password recovery verified. Choose a new secure password."
+        );
+      }
+    }
+  }, [isOpen, initialMode]);
 
   // Registration Form State
   const [regData, setRegData] = useState<UserRegistrationInput>({
@@ -257,6 +278,47 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setSuccessMsg(
       `Password reset instructions were sent to ${forgotEmail.trim()}.`
     );
+  };
+
+  const handleResetPassword = async (
+    e: React.FormEvent
+  ) => {
+    e.preventDefault();
+
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const result =
+      await updatePasswordWithSupabase(
+        newPassword,
+        confirmNewPassword
+      );
+
+    if (!result.success) {
+      setErrorMsg(
+        result.error ||
+        "Could not update password."
+      );
+      return;
+    }
+
+    setSuccessMsg(
+      "Password updated successfully. Please sign in with your new password."
+    );
+
+    setNewPassword("");
+    setConfirmNewPassword("");
+
+    // End the password-recovery session so the
+    // new password is verified through a fresh login.
+    await logoutFromSupabase();
+
+    setTimeout(() => {
+      setMode("login");
+      setSuccessMsg(
+        "Password changed successfully. Sign in with your new password."
+      );
+    }, 500);
   };
 
   return (
@@ -755,6 +817,94 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 ⚡ Quick Demo Login (Commander Alex)
               </button>
             </div>
+          </form>
+        )}
+
+        {/* ================= RESET PASSWORD FORM ================= */}
+        {mode === "reset" && (
+          <form
+            onSubmit={handleResetPassword}
+            className="space-y-5"
+          >
+            <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30">
+              <div className="flex items-center gap-2 text-cyan-300 font-mono text-xs font-bold">
+                <ShieldCheck className="w-4 h-4" />
+                SECURE PASSWORD RECOVERY
+              </div>
+
+              <p className="mt-2 text-[11px] font-mono text-slate-400 leading-relaxed">
+                Your password recovery link has been verified.
+                Choose a new password for your Nix Life OS account.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-mono text-slate-300 mb-1">
+                New Password
+              </label>
+
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
+
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  minLength={8}
+                  value={newPassword}
+                  onChange={(e) => {
+                    setNewPassword(e.target.value);
+                    setErrorMsg(null);
+                  }}
+                  placeholder="Minimum 8 characters"
+                  className="w-full pl-10 pr-10 py-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500 focus:outline-none font-mono"
+                />
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowPassword(!showPassword)
+                  }
+                  className="absolute right-3.5 top-3.5 text-slate-500 hover:text-slate-300"
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-mono text-slate-300 mb-1">
+                Confirm New Password
+              </label>
+
+              <div className="relative">
+                <KeyRound className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
+
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  minLength={8}
+                  value={confirmNewPassword}
+                  onChange={(e) => {
+                    setConfirmNewPassword(e.target.value);
+                    setErrorMsg(null);
+                  }}
+                  placeholder="Repeat new password"
+                  className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500 focus:outline-none font-mono"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-2xl text-xs font-mono font-bold uppercase tracking-widest shadow-[0_0_20px_rgba(34,211,238,0.4)] transition-all flex items-center justify-center gap-2"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Update Password Securely
+            </button>
           </form>
         )}
 

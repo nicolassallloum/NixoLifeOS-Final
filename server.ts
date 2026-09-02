@@ -11,7 +11,10 @@ dotenv.config();
 const { Pool } = pg;
 
 const app = express();
-const PORT = 3000;
+
+// Reduce unnecessary framework fingerprinting.
+app.disable("x-powered-by");
+const PORT = Number(process.env.PORT) || 3000;
 
 // Supabase Project defaults
 const SUPABASE_PROJECT_REF = "aewqatcsrmhznhgdhboa";
@@ -375,7 +378,7 @@ function parseCopilotPromptOffline(prompt: string): any {
 }
 
 // Nix Copilot AI Interpretation Endpoint
-app.post("/api/ai/copilot", async (req, res) => {
+app.post("/api/ai/copilot", requireAuth, async (req, res) => {
   try {
     const ai = getAiClient();
     const { prompt, context } = req.body;
@@ -494,7 +497,7 @@ Format response strictly as JSON:
 });
 
 // Reports Generation AI Endpoint
-app.post("/api/reports/generate", async (req, res) => {
+app.post("/api/reports/generate", requireAuth, async (req, res) => {
   try {
     const ai = getAiClient();
     const { period, moduleData } = req.body;
@@ -543,12 +546,30 @@ app.post("/api/reports/generate", async (req, res) => {
   }
 });
 
+
+function developmentDatabaseRouteOnly(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(404).json({
+      success: false,
+      message:
+        "Legacy database administration endpoint is disabled in production.",
+    });
+  }
+
+  next();
+}
+
+
 // =========================================================================
 // SUPABASE & POSTGRESQL API ENDPOINTS
 // =========================================================================
 
 // 1. Check Database / Supabase Connection Status
-app.get("/api/db/status", async (req, res) => {
+app.get("/api/db/status", requireAuth, async (req, res) => {
   const startTime = Date.now();
   const pool = getPgPool();
   const directPgConfigured = !!pool;
@@ -618,7 +639,7 @@ app.get("/api/db/status", async (req, res) => {
 });
 
 // 2. Initialize PostgreSQL Schema & Tables
-app.post("/api/db/init-schema", async (req, res) => {
+app.post("/api/db/init-schema", developmentDatabaseRouteOnly, requireAuth, async (req, res) => {
   const pool = getPgPool();
   if (!pool) {
     return res.json({
@@ -788,7 +809,7 @@ app.post("/api/db/init-schema", async (req, res) => {
 });
 
 // 3. Sync Client Data to Supabase PostgreSQL
-app.post("/api/db/sync", async (req, res) => {
+app.post("/api/db/sync", developmentDatabaseRouteOnly, requireAuth, async (req, res) => {
   const { tasks, projects, accounts, transactions, habits, medications, healthMeasurements, focusSessions, goals, notes } = req.body;
   const pool = getPgPool();
 
@@ -882,7 +903,7 @@ app.post("/api/db/sync", async (req, res) => {
 });
 
 // 4. Pull Data from Supabase PostgreSQL
-app.get("/api/db/pull", async (req, res) => {
+app.get("/api/db/pull", developmentDatabaseRouteOnly, requireAuth, async (req, res) => {
   const pool = getPgPool();
   if (!pool) {
     return res.json({
@@ -951,8 +972,19 @@ function enforceSnapshotOwnership(
       value as Record<string, unknown>
     )) {
       if (key === "userId") {
-        // Never trust ownership supplied by the browser.
-        result[key] = authenticatedUserId;
+        // Foreign ownership must never be silently
+        // converted into the authenticated user's data.
+        if (
+          typeof child === "string" &&
+          child !== authenticatedUserId
+        ) {
+          throw new Error(
+            "SNAPSHOT_OWNERSHIP_MISMATCH"
+          );
+        }
+
+        result[key] =
+          authenticatedUserId;
       } else {
         result[key] =
           enforceSnapshotOwnership(

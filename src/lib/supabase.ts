@@ -1,5 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
-import { STORAGE_KEYS } from "./storage";
+import {
+  STORAGE_KEYS,
+  getUserScopedStorageKey,
+} from "./storage";
 
 export const SUPABASE_CONFIG = {
   projectRef: "aewqatcsrmhznhgdhboa",
@@ -203,7 +206,29 @@ export const supabaseDbService = {
   // Test connection to Supabase / Postgres via server API
   async checkConnection(): Promise<DatabaseStatus> {
     try {
-      const res = await fetch("/api/db/status");
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        return {
+          connected: false,
+          mode: "offline_local",
+          projectRef: SUPABASE_CONFIG.projectRef,
+          url: SUPABASE_CONFIG.url,
+          tablesCount: 0,
+          tables: [],
+          message:
+            "Sign in to check the cloud database connection.",
+        };
+      }
+
+      const res = await fetch("/api/db/status", {
+        headers: {
+          Authorization:
+            `Bearer ${session.access_token}`,
+        },
+      });
       if (!res.ok) {
         throw new Error(`HTTP Error ${res.status}`);
       }
@@ -261,7 +286,21 @@ export const supabaseDbService = {
       const collections: Record<string, unknown> = {};
 
       for (const key of Object.values(STORAGE_KEYS)) {
-        const raw = localStorage.getItem(key);
+        // Authentication identity comes from Supabase Auth.
+        // Never snapshot browser identity records.
+        if (
+          key === STORAGE_KEYS.USERS ||
+          key === STORAGE_KEYS.CURRENT_USER
+        ) {
+          continue;
+        }
+
+        const raw = localStorage.getItem(
+          getUserScopedStorageKey(
+            key,
+            session.user.id
+          )
+        );
 
         if (raw === null) {
           continue;
@@ -360,6 +399,24 @@ export const supabaseDbService = {
         Object.values(STORAGE_KEYS)
       );
 
+      // Clear only the authenticated user's workspace.
+      // Other accounts remain physically isolated.
+      for (const key of Object.values(STORAGE_KEYS)) {
+        if (
+          key === STORAGE_KEYS.USERS ||
+          key === STORAGE_KEYS.CURRENT_USER
+        ) {
+          continue;
+        }
+
+        localStorage.removeItem(
+          getUserScopedStorageKey(
+            key,
+            session.user.id
+          )
+        );
+      }
+
       let recordsLoaded = 0;
 
       for (const [key, value] of Object.entries(data.data)) {
@@ -367,8 +424,19 @@ export const supabaseDbService = {
           continue;
         }
 
+        // Never restore identity from cloud snapshots.
+        if (
+          key === STORAGE_KEYS.USERS ||
+          key === STORAGE_KEYS.CURRENT_USER
+        ) {
+          continue;
+        }
+
         localStorage.setItem(
-          key,
+          getUserScopedStorageKey(
+            key,
+            session.user.id
+          ),
           JSON.stringify(value)
         );
 

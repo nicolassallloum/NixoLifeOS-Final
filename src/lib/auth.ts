@@ -315,3 +315,48 @@ export async function sendPasswordReset(
     success: true,
   };
 }
+
+export async function updatePasswordWithSupabase(
+  newPassword: string,
+  confirmPassword: string
+): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  if (!newPassword) {
+    return {
+      success: false,
+      error: "New password is required.",
+    };
+  }
+
+  if (newPassword.length < 8) {
+    return {
+      success: false,
+      error: "Password must be at least 8 characters.",
+    };
+  }
+
+  if (newPassword !== confirmPassword) {
+    return {
+      success: false,
+      error: "Passwords do not match.",
+    };
+  }
+
+  const { error } =
+    await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+  if (error) {
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+
+  return {
+    success: true,
+  };
+}
