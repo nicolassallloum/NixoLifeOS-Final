@@ -14,7 +14,7 @@ const app = express();
 
 // Reduce unnecessary framework fingerprinting.
 app.disable("x-powered-by");
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Supabase Project defaults
 const SUPABASE_PROJECT_REF = "aewqatcsrmhznhgdhboa";
