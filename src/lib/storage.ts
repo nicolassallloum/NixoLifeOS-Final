@@ -227,6 +227,98 @@ export function calculateNextLevel(points: number): { nextLevel: PointLevel | nu
   return { nextLevel: null, pointsNeeded: 0 };
 }
 
+
+function getActiveUserId(): string {
+  try {
+    const raw =
+      localStorage.getItem(
+        STORAGE_KEYS.CURRENT_USER
+      );
+
+    if (raw) {
+      const current = JSON.parse(raw);
+
+      if (
+        current &&
+        typeof current.id === "string" &&
+        current.id.trim()
+      ) {
+        return current.id;
+      }
+    }
+  } catch {
+    // Ignore malformed legacy local storage.
+  }
+
+  return "local-unassigned";
+}
+
+
+function migrateLegacyOwnershipInLocalStorage(
+  authenticatedUserId: string
+): number {
+  if (
+    !authenticatedUserId ||
+    authenticatedUserId === "demo-user-1"
+  ) {
+    return 0;
+  }
+
+  let replacements = 0;
+
+  const rewrite = (value: any): any => {
+    if (Array.isArray(value)) {
+      return value.map(rewrite);
+    }
+
+    if (
+      value !== null &&
+      typeof value === "object"
+    ) {
+      const result: Record<string, any> = {};
+
+      for (const [key, child] of Object.entries(value)) {
+        if (
+          key === "userId" &&
+          child === "demo-user-1"
+        ) {
+          result[key] = authenticatedUserId;
+          replacements += 1;
+        } else {
+          result[key] = rewrite(child);
+        }
+      }
+
+      return result;
+    }
+
+    return value;
+  };
+
+  for (const key of Object.values(STORAGE_KEYS)) {
+    const raw = localStorage.getItem(key);
+
+    if (raw === null) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      const migrated = rewrite(parsed);
+
+      localStorage.setItem(
+        key,
+        JSON.stringify(migrated)
+      );
+    } catch {
+      // Preserve non-JSON local data unchanged.
+    }
+  }
+
+  return replacements;
+}
+
+
 // SANITIZERS / MIGRATION TRANSFORMERS
 function sanitizeTask(t: any): Task {
   let status: TaskStatus = "Planned";
@@ -239,7 +331,7 @@ function sanitizeTask(t: any): Task {
 
   return {
     id: t.id || generateUUID(),
-    userId: t.userId || "demo-user-1",
+    userId: t.userId || getActiveUserId(),
     title: t.title || t.name || "Untitled Task",
     description: t.description || "",
     projectId: t.projectId || undefined,
@@ -271,7 +363,7 @@ function sanitizeProject(p: any): Project {
 
   return {
     id: p.id || generateUUID(),
-    userId: p.userId || "demo-user-1",
+    userId: p.userId || getActiveUserId(),
     title: p.title || p.name || "Untitled Project",
     description: p.description || "",
     priority: priority,
@@ -320,7 +412,7 @@ function sanitizeGoal(g: any): Goal {
 
   return {
     id: g.id || generateUUID(),
-    userId: g.userId || "demo-user-1",
+    userId: g.userId || getActiveUserId(),
     title: g.title || "Untitled Goal",
     description: g.description || "",
     category: cat,
@@ -350,7 +442,7 @@ function sanitizeHabit(h: any): Habit {
 
   return {
     id: h.id || generateUUID(),
-    userId: h.userId || "demo-user-1",
+    userId: h.userId || getActiveUserId(),
     title: h.title || h.name || "Untitled Habit",
     description: h.description || "",
     category: cat,
@@ -383,7 +475,7 @@ function sanitizeCalendarEvent(e: any): CalendarEvent {
 
   return {
     id: e.id || generateUUID(),
-    userId: e.userId || "demo-user-1",
+    userId: e.userId || getActiveUserId(),
     title: e.title || "Untitled Event",
     description: e.description || "",
     startDate: e.startDate || new Date().toISOString().split("T")[0],
@@ -414,7 +506,7 @@ function sanitizeFocusSession(f: any): FocusSession {
   const status: FocusSessionStatus = ["Running", "Paused", "Finished", "Cancelled"].includes(f.status) ? f.status : "Finished";
   return {
     id: f.id || generateUUID(),
-    userId: f.userId || "demo-user-1",
+    userId: f.userId || getActiveUserId(),
     taskId: f.taskId || undefined,
     projectId: f.projectId || undefined,
     plannedMinutes: typeof f.plannedMinutes === "number" ? f.plannedMinutes : (typeof f.durationMinutes === "number" ? f.durationMinutes : 25),
@@ -432,7 +524,7 @@ function sanitizeAccount(a: any): Account {
   const type: AccountType = ["Main", "Save", "Cash", "Card", "Debts"].includes(a.type) ? a.type : "Main";
   return {
     id: a.id || generateUUID(),
-    userId: a.userId || "demo-user-1",
+    userId: a.userId || getActiveUserId(),
     name: a.name || "Main Account",
     type: type,
     initialAmount: typeof a.initialAmount === "number" ? a.initialAmount : (typeof a.openingBalance === "number" ? a.openingBalance : 0),
@@ -459,7 +551,7 @@ function sanitizeAccount(a: any): Account {
 function sanitizeCategory(c: any): FinanceCategory {
   return {
     id: c.id || generateUUID(),
-    userId: c.userId || "demo-user-1",
+    userId: c.userId || getActiveUserId(),
     name: c.name || "General",
     type: c.type === "Income" ? "Income" : "Expense",
     color: c.color || "#6B7280",
@@ -475,7 +567,7 @@ function sanitizeTransaction(t: any): Transaction {
   const type: TransactionType = ["Income", "Expense", "Transfer"].includes(t.transactionType || t.type) ? (t.transactionType || t.type) : "Expense";
   return {
     id: t.id || generateUUID(),
-    userId: t.userId || "demo-user-1",
+    userId: t.userId || getActiveUserId(),
     transactionType: type,
     accountId: t.accountId || "acc-main",
     destinationAccountId: t.destinationAccountId || undefined,
@@ -501,7 +593,7 @@ function sanitizeHealthMeasurement(m: any): HealthMeasurement {
   const type: HealthMeasureType = ["Weight", "Blood Pressure", "Water", "Sleep", "Daily Walk", "Daily Calories"].includes(m.measureType || m.type) ? (m.measureType || m.type) : "Weight";
   return {
     id: m.id || generateUUID(),
-    userId: m.userId || "demo-user-1",
+    userId: m.userId || getActiveUserId(),
     measureType: type,
     primaryValue: typeof m.primaryValue === "number" ? m.primaryValue : (typeof m.value === "number" ? m.value : 0),
     secondaryValue: typeof m.secondaryValue === "number" ? m.secondaryValue : undefined,
@@ -522,7 +614,7 @@ function sanitizeMedication(m: any): Medication {
 
   return {
     id: m.id || generateUUID(),
-    userId: m.userId || "demo-user-1",
+    userId: m.userId || getActiveUserId(),
     medicationName: m.medicationName || m.name || "Medication",
     dosageValue: m.dosageValue || m.dose || "1",
     dosageUnit: dUnit,
@@ -555,7 +647,7 @@ function sanitizeCourse(c: any): Course {
 
   return {
     id: c.id || generateUUID(),
-    userId: c.userId || "demo-user-1",
+    userId: c.userId || getActiveUserId(),
     courseTitle: c.courseTitle || c.title || "Untitled Course",
     provider: c.provider || "Online",
     instructor: c.instructor || "",
@@ -581,7 +673,7 @@ function sanitizeJobApplication(j: any): JobApplication {
 
   return {
     id: j.id || generateUUID(),
-    userId: j.userId || "demo-user-1",
+    userId: j.userId || getActiveUserId(),
     companyName: j.companyName || j.company || "Company",
     positionTitle: j.positionTitle || j.position || "Position",
     description: j.description || "",
@@ -611,7 +703,7 @@ function sanitizeNote(n: any): Note {
 
   return {
     id: n.id || generateUUID(),
-    userId: n.userId || "demo-user-1",
+    userId: n.userId || getActiveUserId(),
     title: n.title || "Untitled Note",
     content: n.content || "",
     priority: priority,
@@ -627,7 +719,7 @@ function sanitizeNote(n: any): Note {
 function sanitizeDocument(d: any): DocumentItem {
   return {
     id: d.id || generateUUID(),
-    userId: d.userId || "demo-user-1",
+    userId: d.userId || getActiveUserId(),
     originalFileName: d.originalFileName || d.name || "document.pdf",
     storedFileName: d.storedFileName || `${generateUUID()}.pdf`,
     mimeType: d.mimeType || d.fileType || "application/pdf",
@@ -680,7 +772,7 @@ export const nixStorage = {
     const total = params.basePoints + (params.bonusPoints || 0);
     const event: PointEvent = {
       id: generateUUID(),
-      userId: params.userId || "demo-user-1",
+      userId: params.userId || getActiveUserId(),
       sourceModule: params.sourceModule,
       sourceEntityType: params.sourceEntityType,
       sourceEntityId: params.sourceEntityId,
@@ -733,7 +825,7 @@ export const nixStorage = {
     const events = nixStorage.getAuditEvents();
     const newEvent: AuditEvent = {
       id: generateUUID(),
-      userId: "demo-user-1",
+      userId: getActiveUserId(),
       module: event.module,
       entityType: event.entityType,
       entityId: event.entityId,
@@ -1235,13 +1327,13 @@ export const nixStorage = {
     if (raw.length === 0) {
       // Seed default categories
       const defaults: FinanceCategory[] = [
-        { id: "cat-sal", userId: "demo-user-1", name: "Salary", type: "Income", color: "#10B981", active: true },
-        { id: "cat-inv", userId: "demo-user-1", name: "Investments", type: "Income", color: "#3B82F6", active: true },
-        { id: "cat-fre", userId: "demo-user-1", name: "Freelance", type: "Income", color: "#8B5CF6", active: true },
-        { id: "cat-gro", userId: "demo-user-1", name: "Groceries", type: "Expense", color: "#F59E0B", active: true },
-        { id: "cat-ren", userId: "demo-user-1", name: "Rent & Housing", type: "Expense", color: "#EF4444", active: true },
-        { id: "cat-uti", userId: "demo-user-1", name: "Utilities", type: "Expense", color: "#EC4899", active: true },
-        { id: "cat-ent", userId: "demo-user-1", name: "Entertainment", type: "Expense", color: "#06B6D4", active: true },
+        { id: "cat-sal", userId: getActiveUserId(), name: "Salary", type: "Income", color: "#10B981", active: true },
+        { id: "cat-inv", userId: getActiveUserId(), name: "Investments", type: "Income", color: "#3B82F6", active: true },
+        { id: "cat-fre", userId: getActiveUserId(), name: "Freelance", type: "Income", color: "#8B5CF6", active: true },
+        { id: "cat-gro", userId: getActiveUserId(), name: "Groceries", type: "Expense", color: "#F59E0B", active: true },
+        { id: "cat-ren", userId: getActiveUserId(), name: "Rent & Housing", type: "Expense", color: "#EF4444", active: true },
+        { id: "cat-uti", userId: getActiveUserId(), name: "Utilities", type: "Expense", color: "#EC4899", active: true },
+        { id: "cat-ent", userId: getActiveUserId(), name: "Entertainment", type: "Expense", color: "#06B6D4", active: true },
       ];
       setItem(STORAGE_KEYS.FINANCE_CATEGORIES, defaults);
       return defaults;
@@ -1581,72 +1673,70 @@ export const nixStorage = {
   },
 
   // AUTH & USER REPOSITORY
-  getUsers: (): User[] => getItem(STORAGE_KEYS.USERS, [DEFAULT_DEMO_USER]),
-  getCurrentUser: (): User | null => getItem<User | null>(STORAGE_KEYS.CURRENT_USER, DEFAULT_DEMO_USER),
+  getUsers: (): User[] => getItem(STORAGE_KEYS.USERS, []),
+  getCurrentUser: (): User | null => getItem<User | null>(STORAGE_KEYS.CURRENT_USER, null),
 
-  registerUser: (input: UserRegistrationInput): { success: boolean; user?: User; error?: string } => {
-    if (!input.firstName?.trim()) return { success: false, error: "First Name is required." };
-    if (!input.lastName?.trim()) return { success: false, error: "Last Name is required." };
-    if (!input.email?.trim()) return { success: false, error: "Email Address is required." };
+  saveAuthenticatedUser: (user: User): void => {
+    // Never persist legacy password fields in browser storage.
+    const { passwordHash: _passwordHash, ...safeUser } = user as any;
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(input.email.trim())) {
-      return { success: false, error: "Please enter a valid email address (e.g. user@example.com)." };
-    }
-    if (!input.password) return { success: false, error: "Password is required." };
-    if (input.password.length < 6) return { success: false, error: "Password must be at least 6 characters." };
-    if (input.password !== input.confirmPassword) return { success: false, error: "Passwords do not match." };
-    if (!input.ageConfirmed) return { success: false, error: "Age confirmation required." };
-    if (!input.termsAccepted) return { success: false, error: "Terms acceptance required." };
-    if (!input.privacyAccepted) return { success: false, error: "Privacy Policy acceptance required." };
+    const users = nixStorage
+      .getUsers()
+      .filter(
+        (u) =>
+          u.id !== safeUser.id &&
+          u.id !== "demo-user-1"
+      );
 
-    const users = nixStorage.getUsers();
-    if (users.find((u) => u.email.toLowerCase() === input.email.trim().toLowerCase())) {
-      return { success: false, error: "An account with this email address already exists." };
-    }
+    users.unshift(safeUser as User);
 
-    const now = new Date().toISOString();
-    const newUser: User = {
-      id: generateUUID(),
-      firstName: input.firstName.trim(),
-      lastName: input.lastName.trim(),
-      displayName: input.displayName?.trim() || `${input.firstName.trim()} ${input.lastName.trim()}`,
-      email: input.email.trim().toLowerCase(),
-      country: input.country || "United States",
-      timezone: input.timezone || "UTC-05:00",
-      preferredLanguage: input.preferredLanguage || "English",
-      ageConfirmed: input.ageConfirmed,
-      termsAccepted: input.termsAccepted,
-      privacyAccepted: input.privacyAccepted,
-      profilePhoto: input.profilePhoto?.trim() || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=250&q=80",
-      passwordHash: input.password,
-      createdAt: now,
-      lastLoginAt: now,
-    };
-
-    users.push(newUser);
     setItem(STORAGE_KEYS.USERS, users);
-    setItem(STORAGE_KEYS.CURRENT_USER, newUser);
-    return { success: true, user: newUser };
+    setItem(STORAGE_KEYS.CURRENT_USER, safeUser as User);
+
+    migrateLegacyOwnershipInLocalStorage(
+      safeUser.id
+    );
   },
 
-  loginUser: (email: string, password: string): { success: boolean; user?: User; error?: string } => {
-    const users = nixStorage.getUsers();
-    const cleanEmail = email.trim().toLowerCase();
-    let user = users.find((u) => u.email.toLowerCase() === cleanEmail);
+  purgeLegacyAuthSecrets: (): void => {
+    const users = getItem<any[]>(STORAGE_KEYS.USERS, []).map((u) => {
+      const { passwordHash, password, ...safe } = u || {};
+      return safe;
+    });
 
-    if (!user && (cleanEmail === "alex.vance@nixos.io" || cleanEmail === "demo")) {
-      user = DEFAULT_DEMO_USER;
+    setItem(STORAGE_KEYS.USERS, users);
+
+    const current = getItem<any | null>(
+      STORAGE_KEYS.CURRENT_USER,
+      null
+    );
+
+    if (current) {
+      const {
+        passwordHash,
+        password,
+        ...safeCurrent
+      } = current;
+
+      setItem(
+        STORAGE_KEYS.CURRENT_USER,
+        safeCurrent
+      );
     }
+  },
 
-    if (!user) return { success: false, error: "Invalid email address or user not found." };
-    if (user.passwordHash && user.passwordHash !== password && password !== "demo123" && password !== "admin") {
-      return { success: false, error: "Incorrect password." };
-    }
+  registerUser: (_input: UserRegistrationInput): { success: boolean; user?: User; error?: string } => {
+    return {
+      success: false,
+      error: "Local password authentication is disabled. Use Supabase Auth.",
+    };
+  },
 
-    const updated = { ...user, lastLoginAt: new Date().toISOString() };
-    setItem(STORAGE_KEYS.CURRENT_USER, updated);
-    return { success: true, user: updated };
+  loginUser: (_email: string, _password: string): { success: boolean; user?: User; error?: string } => {
+    return {
+      success: false,
+      error: "Local password authentication is disabled. Use Supabase Auth.",
+    };
   },
 
   logoutUser: (): void => {
@@ -1701,7 +1791,7 @@ export const nixStorage = {
       localStorage.clear();
       localStorage.setItem("nix_clean_v1", "true");
     }
-    setItem(STORAGE_KEYS.CURRENT_USER, DEFAULT_DEMO_USER);
-    setItem(STORAGE_KEYS.USERS, [DEFAULT_DEMO_USER]);
+    setItem(STORAGE_KEYS.CURRENT_USER, null);
+    setItem(STORAGE_KEYS.USERS, []);
   },
 };

@@ -34,6 +34,12 @@ import {
   Lock,
 } from "lucide-react";
 import { nixStorage } from "../../lib/storage";
+import { supabase } from "../../lib/supabase";
+import {
+  mapSupabaseUser,
+  restoreAuthenticatedUser,
+  logoutFromSupabase,
+} from "../../lib/auth";
 import { NixModal } from "../ui/NixUi";
 import { AuthModal } from "../auth/AuthModal";
 import { NixCopilotModal } from "../copilot/NixCopilotModal";
@@ -63,10 +69,51 @@ export const NixAppShell: React.FC<NixAppShellProps> = ({ currentRoute, onRouteC
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   // User Auth State
-  const [currentUser, setCurrentUser] = useState<User | null>(() => nixStorage.getCurrentUser());
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<"login" | "register">("register");
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+
+
+  // Secure Supabase authentication state.
+  useEffect(() => {
+    let mounted = true;
+
+    nixStorage.purgeLegacyAuthSecrets();
+
+    restoreAuthenticatedUser().then((user) => {
+      if (mounted) {
+        setCurrentUser(user);
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (!mounted) return;
+
+        if (session?.user) {
+          const mapped =
+            mapSupabaseUser(session.user);
+
+          nixStorage.saveAuthenticatedUser(
+            mapped
+          );
+
+          setCurrentUser(mapped);
+        } else {
+          nixStorage.logoutUser();
+          setCurrentUser(null);
+        }
+      }
+    );
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const pointsProfile = nixStorage.getPointsProfile();
   const notifications = nixStorage.getNotifications().filter((n) => !n.read);
@@ -341,8 +388,8 @@ export const NixAppShell: React.FC<NixAppShellProps> = ({ currentRoute, onRouteC
                       </button>
 
                       <button
-                        onClick={() => {
-                          nixStorage.logoutUser();
+                        onClick={async () => {
+                          await logoutFromSupabase();
                           setCurrentUser(null);
                           setUserDropdownOpen(false);
                         }}
