@@ -78,47 +78,133 @@ export const NixAppShell: React.FC<NixAppShellProps> = ({ currentRoute, onRouteC
 
 
   // Secure Supabase authentication state.
+  //
+  // Cloud workspace hydration happens BEFORE the
+  // authenticated dashboard becomes active.
   useEffect(() => {
     let mounted = true;
 
     nixStorage.purgeLegacyAuthSecrets();
 
-    restoreAuthenticatedUser().then((user) => {
+    const hydrateUser = async (
+      user: User
+    ) => {
+      await initializeCloudWorkspace(
+        user.id
+      );
+
       if (mounted) {
-        setCurrentUser(user);
+        setCurrentUser({
+          ...user,
+        });
       }
-    });
+    };
+
+    restoreAuthenticatedUser()
+      .then(async (user) => {
+        if (!mounted) {
+          return;
+        }
+
+        if (!user) {
+          stopCloudSync();
+
+          setCurrentUser(null);
+
+          return;
+        }
+
+        await hydrateUser(
+          user
+        );
+      });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (!mounted) return;
+    } =
+      supabase.auth.onAuthStateChange(
+        (event, session) => {
+          if (!mounted) {
+            return;
+          }
 
-        if (event === "PASSWORD_RECOVERY") {
-          setAuthModalMode("reset");
-          setIsAuthModalOpen(true);
+          if (
+            event ===
+            "PASSWORD_RECOVERY"
+          ) {
+            setAuthModalMode(
+              "reset"
+            );
+
+            setIsAuthModalOpen(
+              true
+            );
+          }
+
+          if (
+            session?.user
+          ) {
+            const mapped =
+              mapSupabaseUser(
+                session.user
+              );
+
+            nixStorage
+              .saveAuthenticatedUser(
+                mapped
+              );
+
+            void hydrateUser(
+              mapped
+            );
+          } else {
+            stopCloudSync();
+
+            nixStorage
+              .logoutUser();
+
+            setCurrentUser(
+              null
+            );
+          }
+        }
+      );
+
+    const handleCloudHydrated =
+      () => {
+        if (!mounted) {
+          return;
         }
 
-        if (session?.user) {
-          const mapped =
-            mapSupabaseUser(session.user);
+        /*
+         * Force storage-backed widgets to refresh after
+         * an automatic cloud restore.
+         */
+        setCurrentUser(
+          (current) =>
+            current
+              ? { ...current }
+              : current
+        );
+      };
 
-          nixStorage.saveAuthenticatedUser(
-            mapped
-          );
-
-          setCurrentUser(mapped);
-        } else {
-          nixStorage.logoutUser();
-          setCurrentUser(null);
-        }
-      }
+    window.addEventListener(
+      "nix:cloud-hydrated",
+      handleCloudHydrated
     );
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+
+      subscription
+        .unsubscribe();
+
+      window.removeEventListener(
+        "nix:cloud-hydrated",
+        handleCloudHydrated
+      );
+
+      stopCloudSync();
     };
   }, []);
 
@@ -730,3 +816,7 @@ const NixQuickAddModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ 
     </NixModal>
   );
 };
+import {
+  initializeCloudWorkspace,
+  stopCloudSync,
+} from "../../lib/cloudSync";
